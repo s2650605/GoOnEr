@@ -1,0 +1,11 @@
+# 统一换行：Mac 的启动脚本被检出成 CRLF 就跑不起来，Windows 的 .bat 反过来要 CRLF
+* text=auto
+*.command text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+
+# 二进制：别让 git 当文本处理
+*.piplug binary
+*.exe binary
+*.png binary
+*.ico binary

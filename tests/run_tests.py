@@ -65,7 +65,7 @@ def main():
 
     # 1. 语法
     py_files = ["pi_monitor.py", "codex_monitor_gui.py", "codex_monitor.py", "pi_archive.py",
-                "install_pi_plugin.py", "update_pi_plugin.py", "check_pi_plugin.py"]
+                "build.py", "install_pi_plugin.py", "update_pi_plugin.py", "check_pi_plugin.py"]
     results.append(("Python 语法检查",
                     run("1. Python 语法检查",
                         [sys.executable, "-m", "py_compile"] + py_files)))
