@@ -65,7 +65,8 @@ def main():
 
     # 1. 语法
     py_files = ["pi_monitor.py", "codex_monitor_gui.py", "codex_monitor.py", "pi_archive.py",
-                "build.py", "install_pi_plugin.py", "update_pi_plugin.py", "check_pi_plugin.py"]
+                "codex_activity.py", "build.py", "install_pi_plugin.py", "update_pi_plugin.py",
+                "check_pi_plugin.py"]
     results.append(("Python 语法检查",
                     run("1. Python 语法检查",
                         [sys.executable, "-m", "py_compile"] + py_files)))
@@ -91,6 +92,9 @@ def main():
     results.append(("单实例闸门",
                     run("5c. 单实例闸门（重复启动只留一个控制台）",
                         [sys.executable, str(HERE / "test_single_instance.py")])))
+    results.append(("inProgress 残留识别",
+                    run("5e. inProgress 残留识别（被打断的 turn 不再算进行中）",
+                        [sys.executable, str(HERE / "test_codex_stale.py")])))
     # 5-6. 端到端
     results.append(("端到端场景",
                     run("6. 端到端场景（超限 → 压缩 → 新建会话 → 接管）",

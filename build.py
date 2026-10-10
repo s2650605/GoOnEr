@@ -49,7 +49,7 @@ APPS = [
 # Mac 包里的源码 = 根目录这几份（沿用现版 Mac 目录的文件集，不多不少）
 MAC_SOURCES = [
     "codex_monitor.py", "codex_monitor_gui.py", "pi_monitor.py", "pi_archive.py",
-    "shutdown_coord.py", "check_pi_plugin.py", "update_pi_plugin.py",
+    "codex_activity.py", "shutdown_coord.py", "check_pi_plugin.py", "update_pi_plugin.py",
 ]
 
 # 分发包根目录里的文件

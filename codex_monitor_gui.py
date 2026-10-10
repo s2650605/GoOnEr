@@ -37,6 +37,9 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 # PI-Desktop 的「已归档会话」表：归档状态不在 pi.sqlite 里，见 pi_archive.py
+
+# Codex 的「inProgress 是不是残留」判定：被打断的 turn 会永久停在 inProgress
+import codex_activity
 import pi_archive
 
 # 控制台窗口标题：既用于显示，也用于「重复启动时把已有窗口拉到前台」
@@ -80,12 +83,17 @@ PI_HOME = Path(os.environ.get("PI_DESKTOP_DATA_DIR", Path.home() / ".pi-desktop"
 PI_DB = PI_HOME / "pi.sqlite"
 PI_HEARTBEAT = PI_HOME / "session-keeper" / "plugin.json"
 
+# 「inProgress 但早就没动静」——Codex 被打断会留下这种永久 inProgress 的记录。
+# 这是本工具自己造的状态（数据库里没有这个值），只用于显示与「选中所有进行中」的判定。
+STALE_INPROGRESS = "staleInProgress"
+
 # 状态中文名：Codex 与 Pi 的口径合并
 STATUS_CN = {
     "inProgress": "进行中", "running": "进行中", "queued": "排队中",
     "completed": "已完成", "complete": "已完成",
     "failed": "已失败", "error": "已失败",
     "interrupted": "已停止", "aborted": "已停止",
+    STALE_INPROGRESS: "已停止(残留)",
 }
 
 # 「进行中」的会话状态：从 STATUS_CN 派生，避免与列表显示的中文名两处口径漂移。
@@ -618,7 +626,7 @@ class App:
         self.tree.heading("status", text="状态", anchor="center")
         self.tree.column("#0", width=430, minwidth=200, stretch=True, anchor="w")
         self.tree.column("updated", width=100, minwidth=80, stretch=False, anchor="center")
-        self.tree.column("status", width=80, minwidth=64, stretch=False, anchor="center")
+        self.tree.column("status", width=110, minwidth=90, stretch=False, anchor="center")
         sby6 = ttk.Scrollbar(body6, command=self.tree.yview)
         self.tree.configure(yscrollcommand=sby6.set)
         sby6.pack(side="right", fill="y")
@@ -800,20 +808,31 @@ class App:
         return best[0] if best else members[-1]
 
     def _codex_status(self, tid):
+        """会话最后一条 turn 的状态。
+
+        Codex 被打断时会把 status 永久留在 inProgress（completed_at 为 NULL），
+        几天前的会话也会一直显示成「进行中」。所以 inProgress 要先看有没有近期
+        活动，没有就按「已停止(残留)」显示 —— 判定见 codex_activity.py。
+        """
         if not DB_TURNS.exists():
             return ""
         try:
             con = ro_connect(DB_TURNS)
             try:
                 r = con.execute(
-                    "select status from thread_turns where thread_id=? "
+                    "select status, started_at from thread_turns where thread_id=? "
                     "order by rollout_ordinal desc limit 1", (tid,)
                 ).fetchone()
-                return r[0] if r else ""
             finally:
                 con.close()
         except Exception:
             return ""
+        if not r:
+            return ""
+        status, started = r[0], r[1]
+        if status == "inProgress" and codex_activity.is_stale_in_progress(tid, started):
+            return STALE_INPROGRESS
+        return status
 
     def _list_codex(self):
         out = []

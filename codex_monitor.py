@@ -61,6 +61,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import shutdown_coord as coord_mod
 
+# Codex 的「inProgress 是不是残留」判定（被打断的 turn 会永久停在 inProgress）
+import codex_activity
+
 # 打包成 exe 后强制 stdout/stderr 用 UTF-8，避免 GUI 端读取中文日志乱码
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -325,8 +328,9 @@ def pick_conversations(con, explicit, auto_n):
 
 def last_turn(tcon, thread_id):
     return tcon.execute(
-        "select turn_id, rollout_ordinal, status, error_json from thread_turns "
-        "where thread_id=? order by rollout_ordinal desc limit 1", (thread_id,)
+        "select turn_id, rollout_ordinal, status, error_json, started_at "
+        "from thread_turns where thread_id=? order by rollout_ordinal desc limit 1",
+        (thread_id,),
     ).fetchone()
 
 
@@ -647,7 +651,7 @@ def main():
                     all503_scan.append((cv["name"], upd, False))
                     st["seen"] = None
                     continue
-                turn_id, ordinal, status, err_json = cur
+                turn_id, ordinal, status, err_json, _started = cur
                 all503_scan.append((cv["name"], upd,
                                     has_http_code(err_json, ALL_503_CODES)))
                 episode = (turn_id, ordinal)
@@ -841,6 +845,18 @@ def main():
                 for cv in convs:
                     t = last_turn(tcon, cv["leaf"])
                     states.append((cv, t[2] if t else None))
+                    # 被中断的 turn 会永久停在 inProgress（completed_at 为 NULL），
+                    # 这条残留永远等不到 completed →「全部完成」关机永远不触发。
+                    # 只把它说清楚，不改判定：没真完成就不能关机。
+                    if t is not None and t[2] == "inProgress" and \
+                            codex_activity.is_stale_in_progress(cv["leaf"], t[4]):
+                        if cv["root"] not in ctl.setdefault("stale_logged", set()):
+                            ctl["stale_logged"].add(cv["root"])
+                            log(f"[{cv['name']}] 最后一条 turn 停在 inProgress，"
+                                f"且已 {codex_activity.stale_minutes_text(cv['leaf'], t[4])}"
+                                f"没有活动 —— 这是被中断留下的残留记录，"
+                                f"「全部完成」关机不会触发；想按「没活动就关机」"
+                                f"请开「全部停止 N 分钟」规则", f)
                 if states and all(st == "completed" for _c, st in states):
                     if not ctl.get("all_done_since"):
                         ctl["all_done_since"] = time.time()
