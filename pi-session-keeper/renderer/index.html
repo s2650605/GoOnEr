@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>会话续跑</title>
+  <style>
+    :root {
+      --bg: #1e1f22;
+      --panel: #26282c;
+      --border: #3a3d42;
+      --text: #e6e6e6;
+      --muted: #9aa0a6;
+      --ok: #4caf7d;
+      --err: #e06c75;
+      --accent: #4c8bf5;
+      --sel: #2f3540;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f5f6f7;
+        --panel: #ffffff;
+        --border: #dfe1e5;
+        --text: #1f2328;
+        --muted: #6b7280;
+        --ok: #1a7f4b;
+        --err: #c0392b;
+        --accent: #2563eb;
+        --sel: #e8eefb;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px 22px 28px;
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.6 "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+    }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    .card h2 {
+      font-size: 13px;
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .kv { display: grid; grid-template-columns: 88px 1fr; gap: 4px 10px; }
+    .kv dt { color: var(--muted); }
+    .kv dd { margin: 0; word-break: break-all; }
+    .dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      margin-right: 6px; vertical-align: middle;
+    }
+    .dot.on { background: var(--ok); }
+    .dot.off { background: var(--err); }
+    button {
+      font: inherit;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    input[type="text"] {
+      font: inherit;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 8px;
+      width: 100%;
+    }
+    .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+    .row label { color: var(--muted); white-space: nowrap; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+    code {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12px;
+    }
+    .muted { color: var(--muted); }
+    .full { grid-column: 1 / -1; }
+    #sessions-wrap { max-height: 260px; overflow: auto; }
+    #sessions tr { cursor: pointer; }
+    #sessions tr:hover { background: var(--sel); }
+    #sessions tr.selected { background: var(--sel); }
+    .badge {
+      display: inline-block; padding: 0 6px; border-radius: 9px;
+      font-size: 11px; border: 1px solid var(--border);
+    }
+    .badge.run { color: var(--ok); border-color: var(--ok); }
+    .warn {
+      background: rgba(224, 108, 117, 0.12);
+      border: 1px solid var(--err);
+      border-radius: 6px;
+      padding: 7px 10px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .warn.ok {
+      background: rgba(76, 175, 125, 0.12);
+      border-color: var(--ok);
+    }
+    .badge.auto { color: var(--ok); border-color: var(--ok); }
+    .badge.risky { color: var(--err); border-color: var(--err); }
+  </style>
+</head>
+<body>
+  <h1>会话续跑</h1>
+  <div class="sub">
+    这个插件只做「执行器」：判定中止与发送节奏由外部监控脚本负责，避免同一会话被重复发送。
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>运行状态</h2>
+      <dl class="kv">
+        <dt>后台服务</dt><dd id="s-running">—</dd>
+        <dt>监控脚本</dt><dd id="s-monitor">—</dd>
+        <dt>插件版本</dt><dd id="s-version">—</dd>
+        <dt>插件 ID</dt><dd id="s-id">—</dd>
+        <dt>数据目录</dt><dd id="s-root">—</dd>
+        <dt>指令目录</dt><dd id="s-cmddir">—</dd>
+        <dt>最近错误</dt><dd id="s-error">—</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <h2>设置</h2>
+      <div class="row">
+        <label style="min-width:96px">执行器</label>
+        <label><input type="checkbox" id="set-enabled" /> 启用（关闭后不再执行外部指令）</label>
+      </div>
+      <div class="row">
+        <label style="min-width:96px">默认内容</label>
+        <input type="text" id="set-message" placeholder="继续" />
+      </div>
+      <div class="row">
+        <label style="min-width:96px">关机策略</label>
+        <label><input type="checkbox" id="set-alldone" /> 所有会话都「正常完成」后关机</label>
+      </div>
+      <div class="row">
+        <label style="min-width:96px">观察秒数</label>
+        <input type="text" id="set-donesecs" placeholder="120" style="width:80px" />
+        <span class="muted">秒（全部完成后再等这么久才关机，防止刚好又有新任务）</span>
+      </div>
+      <div class="row">
+        <label style="min-width:96px">跨来源</label>
+        <label><input type="checkbox" id="set-allsrc" /> 要求所有监控来源都完成才关机</label>
+      </div>
+      <div class="row" style="margin-bottom:6px">
+        <label style="min-width:96px"></label>
+        <span class="muted">同时监控 Pi 和 Codex 时：勾上=两边都完成才关机（推荐）；不勾=谁先完成谁关机。</span>
+      </div>
+      <div class="row">
+        <label style="min-width:96px">全 503 关机</label>
+        <label><input type="checkbox" id="set-all503" /> 近期活跃会话全部报 503 时关机</label>
+      </div>
+      <div class="row" style="margin-bottom:6px">
+        <label style="min-width:96px">活跃窗口</label>
+        <input type="text" id="set-all503-win" placeholder="60" style="width:60px" />
+        <span class="muted">分钟内的会话参与判定；更早的历史会话不算（服务商整体挂掉时再等也没用）。
+          Pi 的 503 按 Pi 日志里的真实 HTTP 状态码判定，<b>能区分 400 与 503</b>；
+          日志里查不到的会话按「不是 503」处理，不会误关机。</span>
+      </div>
+      <div class="row">
+        <label style="min-width:96px">报错续接</label>
+        <label><input type="checkbox" id="set-ctx-on" /> 会话连续报错时自动续接（Pi）</label>
+      </div>
+      <div class="row">
+        <label style="min-width:96px">连续次数</label>
+        <input type="text" id="set-ctx-n" placeholder="3" style="width:60px" />
+        <span class="muted">次后触发；方式</span>
+        <select id="set-ctx-mode" style="font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 8px">
+          <option value="compact">先压缩上下文，压不动再新建会话</option>
+          <option value="new">直接新建会话</option>
+        </select>
+      </div>
+      <div class="row">
+        <label style="min-width:96px">报 400</label>
+        <label><input type="checkbox" id="set-400new" /> 真报 400 时直接新建会话（不等次数、不压缩）</label>
+      </div>
+      <div class="row" style="margin-bottom:6px">
+        <label style="min-width:96px"></label>
+        <span class="muted">Pi 的「400」映射为 PROVIDER_ERROR，上下文超限为 CONTEXT_TOO_LARGE。
+          「报 400 直接新建会话」按 Pi 日志里的真实 HTTP 状态码判定，能区分 400 与 503/5xx，
+          所以 503（服务商整体挂掉）不会走这条路。触发后原会话停止监控、新会话自动接管
+          （需监控脚本在运行）。</span>
+      </div>
+
+      <div class="row" style="margin-bottom:0">
+        <button class="primary" id="btn-save">保存设置</button>
+        <button id="btn-refresh">刷新</button>
+        <button id="btn-clear">清空记录</button>
+        <span id="set-result" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="card full">
+      <h2>宿主能力核对（确认官方操作可用）</h2>
+      <div id="ops" class="muted">读取中…</div>
+    </div>
+
+    <div class="card full">
+      <h2>会话列表（点一行选中，再点「对选中会话发送自检」）</h2>
+      <div class="row">
+        <button id="btn-load">刷新会话</button>
+        <button class="primary" id="btn-self">对选中会话发送自检</button>
+        <button id="btn-auto">把未全自动的会话切到「全自动」</button>
+        <span id="self-result" class="muted">
+          自检会通过 agent/prompt 真的投递一条消息，请用不重要的会话测试。
+        </span>
+      </div>
+      <div class="warn" id="warn-auto">
+        ⚠ 通宵执行的前提：会话必须是「<b>全自动</b>」权限模式。
+        否则半夜遇到需要确认的工具操作会一直卡到早上 —— 续跑工具发消息也没用。
+        点上面的按钮可批量切换（Pi 会对每个会话弹一次原生确认，这是它的安全设计，插件绕不过）。
+      </div>
+      <div id="sessions-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:90px">状态</th>
+              <th style="width:96px">权限</th>
+              <th style="width:150px">项目</th>
+              <th>会话</th>
+              <th style="width:120px">最后活动</th>
+              <th style="width:90px">ID</th>
+            </tr>
+          </thead>
+          <tbody id="sessions">
+            <tr><td colspan="6" class="muted">点「刷新会话」加载</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card full">
+      <h2>最近执行记录</h2>
+        <thead>
+          <tr><th style="width:150px">时间</th><th style="width:80px">动作</th><th style="width:90px">会话</th><th style="width:60px">结果</th><th>说明</th></tr>
+        </thead>
+        <tbody id="events">
+          <tr><td colspan="5" class="muted">暂无记录</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const bridge = window.pluginBridge;
+    // 元素缺失时返回一个「哑对象」：面板 HTML 与插件 JS 版本错配时
+    // （例如刚更新了面板文件但插件还没重载），一个找不到的元素不该
+    // 把整个面板打崩成「读取失败: Cannot set properties of null」。
+    const NULL_EL = {
+      innerHTML: "", textContent: "", value: "", checked: false, className: "",
+      addEventListener() {}, querySelectorAll() { return []; }, configure() {},
+    };
+    const $ = (id) => document.getElementById(id) || NULL_EL;
+    let sessions = [];
+    let selectedId = "";
+
+    function fmtTime(ms) {
+      if (!ms) return "—";
+      const d = new Date(ms);
+      const p = (n) => String(n).padStart(2, "0");
+      return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    function fmtIdle(sec) {
+      if (sec === null || sec === undefined) return "—";
+      if (sec < 60) return sec + " 秒前";
+      if (sec < 3600) return Math.floor(sec / 60) + " 分钟前";
+      if (sec < 86400) return Math.floor(sec / 3600) + " 小时前";
+      return Math.floor(sec / 86400) + " 天前";
+    }
+
+    function esc(text) {
+      return String(text ?? "").replace(/[&<>"]/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    }
+
+    function renderSessions() {
+      if (!sessions.length) {
+        $("sessions").innerHTML = '<tr><td colspan="6" class="muted">没有读到会话（可能权限未授予，或 Pi 里还没有会话）</td></tr>';
+        return;
+      }
+      $("sessions").innerHTML = sessions.map((s) => {
+        const running = s.isRunning;
+        const state = running
+          ? '<span class="badge run">执行中</span>'
+          : '<span class="badge">空闲</span>';
+        const extra = running && s.currentTurnId
+          ? ` <span class="muted" title="当前 turn">${esc(s.currentTurnId.slice(0, 8))}</span>`
+          : "";
+        const warn = s.pendingToolConfirmations > 0
+          ? ' <span class="err" title="等待工具确认">需确认</span>'
+          : "";
+        // 权限模式：只有 auto 才能通宵无人值守
+        const mode = s.permissionMode || "";
+        const auto = mode === "auto";
+        const modeLabel = { auto: "全自动", "accept-edits": "接受编辑",
+                            ask: "每次询问", inherit: "跟随默认" }[mode] || mode || "未知";
+        const modeCell = `<span class="badge ${auto ? "auto" : "risky"}"
+          title="${auto ? "无人值守安全" : "半夜可能卡在确认上"}">${modeLabel}</span>`;
+        return `<tr data-id="${esc(s.id)}" class="${s.id === selectedId ? "selected" : ""}">
+          <td>${state}${warn}</td>
+          <td>${modeCell}</td>
+          <td>${esc(s.project)}</td>
+          <td>${esc(s.title)}${extra}</td>
+          <td>${fmtIdle(s.idleSeconds)}</td>
+          <td><code>${esc(s.id.slice(0, 8))}</code></td>
+        </tr>`;
+      }).join("");
+      for (const tr of $("sessions").querySelectorAll("tr[data-id]")) {
+        tr.addEventListener("click", () => {
+          selectedId = tr.dataset.id;
+          renderSessions();
+        });
+      }
+      // 顶部横幅：是否所有会话都已具备无人值守条件
+      const risky = sessions.filter((s) => (s.permissionMode || "") !== "auto");
+      const banner = $("warn-auto");
+      if (risky.length) {
+        banner.className = "warn";
+        banner.innerHTML =
+          `⚠ 有 <b>${risky.length}</b> 个会话不是「全自动」模式，半夜遇到需要确认的操作会一直卡住。` +
+          `点「把未全自动的会话切到全自动」批量修正。`;
+      } else {
+        banner.className = "warn ok";
+        banner.textContent = "✓ 所有会话都是「全自动」模式，具备无人值守条件。";
+      }
+    }
+
+    async function loadSessions() {
+      $("sessions").innerHTML = '<tr><td colspan="6" class="muted">读取中…</td></tr>';
+      const res = await bridge.invoke("listSessions", {});
+      if (!res.ok) {
+        $("sessions").innerHTML = `<tr><td colspan="6" class="err">读取失败：${esc(res.error)}</td></tr>`;
+        return;
+      }
+      sessions = res.sessions ?? [];
+      renderSessions();
+    }
+
+    // 监控脚本是否在跑：这是用户最需要确认的一件事——
+    // 插件只是执行器，没有脚本在跑的话，会话报错后不会有人处理。
+    function renderMonitor(monitors) {
+      // 老版插件（还没重载）不会返回 monitors —— 此时不能谎报「未运行」，
+      // 那会让人以为监控脚本没跑，实际只是插件版本旧。
+      if (!monitors) {
+        return '<span class="err">无法判断（插件还没重载到最新版）</span>';
+      }
+      const parts = [];
+      for (const [key, label] of [["codex", "Codex"], ["pi", "Pi"]]) {
+        const st = monitors[key];
+        if (!st || !st.running) {
+          parts.push(`<span class="err">${label} 未运行</span>`);
+          continue;
+        }
+        const extra = st.dryRun
+          ? '<span class="muted">（模拟运行，不会真的发送）</span>'
+          : "";
+        parts.push(`<span class="ok">${label} 运行中</span>${extra}`);
+      }
+      return parts.join(" &nbsp;·&nbsp; ");
+    }
+
+    function render(status) {
+      $("s-running").innerHTML = status.running
+        ? '<span class="dot on"></span>运行中'
+        : '<span class="dot off"></span>未运行';
+      $("s-version").textContent = status.version || "—";
+      $("s-id").textContent = status.pluginId || "—";
+      $("s-root").textContent = status.hostRoot || "—";
+      $("s-cmddir").textContent = status.commandDir || "—";
+      $("s-monitor").innerHTML = renderMonitor(status.monitors);
+      $("s-error").innerHTML = status.lastError
+        ? `<span class="err">${esc(status.lastError)}</span>`
+        : '<span class="muted">无</span>';
+
+      $("set-enabled").checked = status.settings?.enabled !== false;
+      $("set-alldone").checked = status.settings?.shutdownWhenAllDone === true;
+      $("set-donesecs").value = status.settings?.allDoneConfirmSeconds ?? 120;
+      $("set-allsrc").checked = status.settings?.shutdownRequiresAllSources !== false;
+      $("set-all503").checked = status.settings?.shutdownWhenAll503 === true;
+      $("set-all503-win").value = status.settings?.all503WindowMinutes ?? 60;
+      $("set-message").value = status.settings?.defaultMessage ?? "继续";
+      $("set-ctx-on").checked = status.settings?.contextContinue !== false;
+      $("set-ctx-n").value = status.settings?.contextContinueThreshold ?? 3;
+      $("set-ctx-mode").value =
+        status.settings?.contextContinueMode === "new" ? "new" : "compact";
+      $("set-400new").checked = status.settings?.openNewOn400 !== false;
+
+      const ops = status.operations ?? [];
+      $("ops").innerHTML = ops.length
+        ? ops.map((o) => `<div><code>${esc(o.id)}</code> <span class="muted">[${esc(o.risk)}]</span> ${esc(o.description ?? "")}</div>`).join("")
+        : '<span class="err">没有读到 agent/prompt 等操作，请检查 desktop.control 权限是否已授予</span>';
+
+      const rows = status.events ?? [];
+      $("events").innerHTML = rows.length
+        ? rows.map((e) => `<tr>
+            <td>${fmtTime(e.at)}</td>
+            <td>${esc(e.action)}</td>
+            <td>${esc(e.sessionId) || "—"}</td>
+            <td class="${e.ok ? "ok" : "err"}">${e.ok ? "成功" : "失败"}</td>
+            <td>${esc(e.detail)}</td>
+          </tr>`).join("")
+        : '<tr><td colspan="5" class="muted">暂无记录</td></tr>';
+    }
+
+    async function load() {
+      try {
+        render(await bridge.invoke("status", {}));
+      } catch (error) {
+        $("s-error").innerHTML = `<span class="err">读取失败：${esc(error?.message ?? error)}</span>`;
+      }
+    }
+
+    $("btn-refresh").addEventListener("click", load);
+    $("btn-load").addEventListener("click", loadSessions);
+
+    $("btn-auto").addEventListener("click", async () => {
+      const risky = sessions.filter((s) => (s.permissionMode || "") !== "auto");
+      if (!risky.length) {
+        $("self-result").innerHTML = '<span class="ok">所有会话已经是全自动，无需切换</span>';
+        return;
+      }
+      if (!window.confirm(
+        `将把 ${risky.length} 个会话的权限模式改为「全自动」。\n\n` +
+        `全自动 = 不询问就运行命令、可能修改文件。\n` +
+        `Pi 会对每个会话弹一次原生确认框，请逐个允许。\n\n继续吗？`)) {
+        return;
+      }
+      $("self-result").textContent = `正在切换 ${risky.length} 个会话，请留意 Pi 的确认框…`;
+      const res = await bridge.invoke("setAutoMode", {
+        sessionIds: risky.map((s) => s.id),
+      });
+      const failed = (res.results ?? []).filter((r) => !r.ok);
+      $("self-result").innerHTML = failed.length
+        ? `<span class="err">成功 ${res.okCount}/${res.total}；失败：` +
+          esc(failed.map((r) => `${r.sessionId.slice(0, 8)} ${r.error}`).join("; ")) + "</span>"
+        : `<span class="ok">已把 ${res.okCount} 个会话切到全自动</span>`;
+      await Promise.all([load(), loadSessions()]);
+    });
+
+    $("btn-save").addEventListener("click", async () => {
+      const out = $("set-result");
+      out.className = "muted";
+      out.textContent = "正在保存…";
+      let res = null;
+      try {
+        res = await bridge.invoke("setSettings", {
+          enabled: $("set-enabled").checked,
+          defaultMessage: $("set-message").value.trim() || "继续",
+          shutdownWhenAllDone: $("set-alldone").checked,
+          allDoneConfirmSeconds: (() => {
+            const raw = Number($("set-donesecs").value.trim());
+            return Number.isFinite(raw) && raw >= 0 ? raw : 120;
+          })(),
+          shutdownRequiresAllSources: $("set-allsrc").checked,
+          shutdownWhenAll503: $("set-all503").checked,
+          all503WindowMinutes: (() => {
+            const raw = Number($("set-all503-win").value.trim());
+            return Number.isFinite(raw) && raw > 0 ? raw : 60;
+          })(),
+          contextContinue: $("set-ctx-on").checked,
+          contextContinueThreshold: (() => {
+            const raw = Math.floor(Number($("set-ctx-n").value.trim()));
+            return Number.isFinite(raw) && raw > 0 ? raw : 3;
+          })(),
+          contextContinueMode: $("set-ctx-mode").value === "new" ? "new" : "compact",
+          openNewOn400: $("set-400new").checked,
+        });
+      } catch (error) {
+        // 保存失败必须把原因写在面板上：否则用户只看到「报错」两个字，
+        // 事后既不知道哪一项没存进去，也无从排查（这次就是这么卡住的）。
+        out.className = "err";
+        out.textContent = `保存失败：${error?.message ?? error}`;
+        await load();
+        return;
+      }
+      if (res && res.ok === false) {
+        out.className = "err";
+        out.textContent = `保存失败：${res.error ?? "未知原因"}`;
+      } else {
+        out.className = "ok";
+        out.textContent = "✓ 已保存（监控脚本下一轮读到）";
+      }
+      await load();
+    });
+
+    $("btn-clear").addEventListener("click", async () => {
+      await bridge.invoke("clearEvents", {});
+      await load();
+    });
+
+    $("btn-self").addEventListener("click", async () => {
+      if (!selectedId) {
+        $("self-result").innerHTML = '<span class="err">请先在上面的列表里点一行选中会话</span>';
+        return;
+      }
+      const target = sessions.find((s) => s.id === selectedId);
+      const label = target ? `${target.project} / ${target.title}` : selectedId.slice(0, 8);
+      $("self-result").textContent = `正在向「${label}」发送…`;
+      const result = await bridge.invoke("selftest", { sessionId: selectedId });
+      $("self-result").innerHTML = result.ok
+        ? `<span class="ok">已投递到「${esc(label)}」，请到该会话确认收到自检消息</span>`
+        : `<span class="err">失败：${esc(result.error)}</span>`;
+      await Promise.all([load(), loadSessions()]);
+    });
+
+    load();
+    loadSessions();
+    setInterval(load, 3000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+# 构建产物：PyInstaller 打出来的 exe 与内容目录，可由源码重建
+dist/
+Codex会话监控工具/Windows/
+Codex会话监控工具.zip
+
+# 上一版 onefile exe 的备份：仅回退用，几十 MB 的二进制不进库（说明文字保留）
+Codex会话监控工具/_旧版onefile备份/*.exe
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 运行日志（监控脚本每次运行都会追加）
+*.log
+
+# 测试临时文件：每次跑测试都会重新生成（含假关机脚本、假 codex、临时库）
+tests/_tmp/

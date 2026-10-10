@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "id": "local.session-keeper",
+  "name": "会话续跑",
+  "version": "1.9.2",
+  "description": "PI-Desktop 会话续跑助手：读取本机 pi.sqlite，找出真正中止的会话，按退避节奏把「继续」投递给指定会话（走官方 agent/prompt）；支持上下文超限时压缩上下文或新建会话续接。供外部监控脚本调用。",
+  "main": "main.js",
+  "ui": {
+    "panel": "renderer/index.html",
+    "title": {
+      "en": "Session Keeper",
+      "zh-CN": "会话续跑"
+    },
+    "width": 900,
+    "height": 640,
+    "resizable": true
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "local.session-keeper.panel",
+        "title": "会话续跑：打开面板",
+        "category": "会话",
+        "keywords": [
+          "会话",
+          "监控",
+          "继续",
+          "session",
+          "keeper",
+          "monitor"
+        ]
+      },
+      {
+        "id": "local.session-keeper.test-send",
+        "title": "会话续跑：自检发送（发给当前会话）",
+        "category": "会话",
+        "keywords": [
+          "自检",
+          "发送",
+          "selftest",
+          "send"
+        ]
+      }
+    ],
+    "services": [
+      {
+        "id": "watcher",
+        "label": "会话续跑：外部指令执行器",
+        "autoRestart": true
+      }
+    ],
+    "settings": [
+      {
+        "key": "enabled",
+        "title": "启用外部指令执行器",
+        "description": "关闭后后台服务仍在运行，但不再执行外部脚本投递的发送/中止指令。",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "defaultMessage",
+        "title": "默认发送内容",
+        "description": "外部指令没有指定 content 时使用的文本。",
+        "type": "string",
+        "default": "继续"
+      },
+      {
+        "key": "shutdownWhenAllDone",
+        "title": "所有会话都「正常完成」后关机",
+        "description": "外部监控脚本读这个开关：所有被监控会话都正常跑完（最后回合为「已完成」）后，观察一段时间再关机。卡在等确认、失败、仍在跑的会话都不算完成，不会误关机。",
+        "type": "boolean",
+        "default": false
+      },
+      {
+        "key": "allDoneConfirmSeconds",
+        "title": "完成后再观察多少秒才关机",
+        "description": "防止刚好又有新任务进来。默认 120 秒。",
+        "type": "number",
+        "default": 120
+      },
+      {
+        "key": "shutdownRequiresAllSources",
+        "title": "要求所有监控来源都完成才关机",
+        "description": "同时监控 Pi 和 Codex 时：开启=两边都全部完成才关机（推荐）；关闭=各自独立判定，谁先完成谁关机。只监控一个来源时此项无影响。",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "shutdownWhenAll503",
+        "title": "近期活跃会话全部报 503 时关机",
+        "description": "外部监控脚本读这个开关：所有「近期活跃」（窗口内有活动）的被监控会话都报 503 时，直接关机——服务商整体挂掉时再等也没用。历史会话不参与判定。Codex 按错误里的 HTTP 503 精确匹配；Pi 按 Pi 日志里记录的真实 HTTP 状态码精确匹配（能区分 400 与 503），日志里查不到的会话、以及日志记录与该会话最后一个回合时间对不上的会话（比如早已恢复的旧记录），都按「不是 503」处理，不会误关机。",
+        "type": "boolean",
+        "default": false
+      },
+      {
+        "key": "all503WindowMinutes",
+        "title": "判定「近期活跃」的窗口（分钟）",
+        "description": "只统计这段时间内有活动的会话；更早的历史会话不参与「全部 503」判定。默认 60。",
+        "type": "number",
+        "default": 60
+      },
+      {
+        "key": "contextContinue",
+        "title": "报错/上下文超限时自动续接（Pi）",
+        "description": "外部监控脚本读这个开关：Pi 会话连续出现错误（Pi 的 400 映射为 PROVIDER_ERROR，上下文超限为 CONTEXT_TOO_LARGE）达到设定次数后，自动压缩上下文或新建会话把任务交接过去，不必半夜人工处理。关闭后只按普通中止逻辑重试「继续」。",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "contextContinueThreshold",
+        "title": "连续多少次报错后续接",
+        "description": "必须连续出现这么多个新的失败回合才触发（单次网络抖动不会触发，这是刻意的保护）。默认 3。",
+        "type": "number",
+        "default": 3
+      },
+      {
+        "key": "contextContinueMode",
+        "title": "续接方式",
+        "description": "compact=先压缩上下文、压不动再新建会话（推荐，更省 token）；new=直接新建会话。",
+        "type": "string",
+        "default": "compact"
+      },
+      {
+        "key": "openNewOn400",
+        "title": "报 400 的会话直接新建会话",
+        "description": "外部监控脚本读这个开关：会话真报 HTTP 400（按 Pi 日志里的真实状态码判定，能区分 400 与 503/5xx）时，立刻新建会话把任务交接过去——不等连续次数、也不先压缩。400 是确定性错误，重发「继续」和压缩上下文都救不了。503（服务商整体挂掉）不算 400，仍走上面的连续次数规则；上下文超限也仍走「先压缩」。默认开。",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "lastEvents",
+        "title": "最近执行记录",
+        "description": "面板展示用，自动维护，一般不需要手改。",
+        "type": "string",
+        "default": ""
+      }
+    ]
+  },
+  "permissions": [
+    "ui.panel",
+    "background.service",
+    "desktop.control"
+  ],
+  "engines": {
+    "piDesktop": ">=0.15.0"
+  },
+  "activationEvents": [
+    "onStartup"
+  ]
+}
