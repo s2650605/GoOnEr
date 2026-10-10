@@ -100,6 +100,15 @@ python tests/test_package.py # 检查产物：exe 能起来、zip 结构齐
 两个平台的内容** —— Mac 包只是「根目录源码 + 启动.command」的拷贝，不需要编译，所以不必开
 macOS runner（省 10 倍计费）。产物上传为 artifact；打 `v*` tag 时用 `gh` 发 Release。
 
+### 发一个 Release
+
+```bash
+git tag -a v1.0.0 -m "v1.0.0"
+git push origin v1.0.0        # 触发 CI：编译 → 自检 → 发 Release（附件 = Codex会话监控工具.zip）
+```
+
+Release 步骤与构建在**同一个 job** 里：构建或自检失败就停在前一步，不会出现「空发布」。
+
 ## 测试
 
 ```bash
