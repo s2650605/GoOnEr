@@ -31,31 +31,8 @@ jobs:
         shell: bash
         run: python build.py
 
-      - name: 自检：exe 起得来
-        shell: bash
-        run: |
-          ./Codex会话监控工具/Windows/pi_monitor.exe --help > /dev/null
-          ./Codex会话监控工具/Windows/codex_monitor.exe --help > /dev/null
-          echo "两个控制台 exe 都能跑"
-
-      - name: 自检：分发包结构齐
-        shell: bash
-        run: |
-          python - <<'PY'
-          import sys, zipfile
-          names = set(zipfile.ZipFile('Codex会话监控工具.zip').namelist())
-          need = [
-              'Windows/pi_monitor.exe', 'Windows/codex_monitor.exe',
-              'Windows/codex_monitor_gui.exe', 'Windows/_pi', 'Windows/_gui',
-              'Mac/pi_monitor.py', 'Mac/pi_archive.py', 'Mac/启动.command',
-              '使用说明.txt', 'update_pi_plugin.py',
-          ]
-          # 内容目录是目录条目，用前缀判断
-          missing = [n for n in need
-                     if n not in names and not any(x.startswith(n + '/') for x in names)]
-          print(f'zip 条目 {len(names)} 个；缺：{missing}')
-          sys.exit(1 if missing else 0)
-          PY
+      - name: 自检：包结构 + exe 能起来
+        run: python tests/test_package.py
 
       - uses: actions/upload-artifact@v4
         with:
